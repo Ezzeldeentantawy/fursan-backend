@@ -78,20 +78,17 @@ class AuthController extends Controller
     }
     public function logout(Request $request)
     {
-        // Revoke current user's token (if using Sanctum)
-        $user = $request->user();
+        Auth::guard('web')->logout();
 
-        if ($user) {
-            // If using Sanctum token-based API
-            $user->currentAccessToken()->delete();
+        if ($request->hasSession()) {
+            $request->session()->invalidate();
+            $request->session()->regenerateToken();
         }
 
-        // Log out from session (optional if using session)
-        Auth::logout();
-
-        return response()->json([
-            'message' => 'Logged out successfully'
-        ]);
+        // This manually tells the browser to clear the session cookie
+        return response()->json(['message' => 'Logged out'])
+            ->withoutCookie(config('session.cookie'));
     }
+
 }
 

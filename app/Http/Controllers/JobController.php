@@ -43,22 +43,24 @@ class JobController extends Controller
         $employer = $request->user();
 
         $validated = $request->validate([
-            'title'           => 'required|array',
-            'title.*'         => 'string|max:255',
-            'type'            => 'required|in:onsite,remote',
-            'location'        => 'nullable|array',
-            'location.*'      => 'string|max:255',
-            'details'         => 'nullable|array',
-            'details.*'       => 'string',
+            'title' => 'required|array',
+            'title.*' => 'string|max:255',
+            'type' => 'required|in:onsite,remote',
+            'is_easy_apply' => 'boolean',
+            'apply_link' => 'nullable|url|required_unless:is_easy_apply,true',
+            'location' => 'nullable|array',
+            'location.*' => 'string|max:255',
+            'details' => 'nullable|array',
+            'details.*' => 'string',
             'job_description' => 'required|array',
-            'job_description.*'=> 'string',
-            'requirements'    => 'required|array',
-            'requirements.*'  => 'string',
-            'benefits'        => 'nullable|array',
-            'benefits.*'      => 'string',
-            'overview'        => 'nullable|array',
-            'overview.*'      => 'string',
-            'image'           => 'nullable|image|mimes:jpeg,png,jpg,webp|max:2048',
+            'job_description.*' => 'string',
+            'requirements' => 'required|array',
+            'requirements.*' => 'string',
+            'benefits' => 'nullable|array',
+            'benefits.*' => 'string',
+            'overview' => 'nullable|array',
+            'overview.*' => 'string',
+            'image' => 'nullable|image|mimes:jpeg,png,jpg,webp|max:2048',
         ]);
 
         $imagePath = null;
@@ -69,13 +71,13 @@ class JobController extends Controller
         $job = JobListing::create([
             ...$validated,
             'employer_id' => $employer->id,
-            'status'      => JobListing::STATUS_PENDING,
-            'image'       => $imagePath,
+            'status' => JobListing::STATUS_PENDING,
+            'image' => $imagePath,
         ]);
 
         return response()->json([
             'message' => 'Job submitted for approval.',
-            'job'     => $job,
+            'job' => $job,
         ], 201);
     }
 
@@ -95,22 +97,24 @@ class JobController extends Controller
         }
 
         $validated = $request->validate([
-            'title'           => 'sometimes|array',
-            'title.*'         => 'string|max:255',
-            'type'            => 'sometimes|in:onsite,remote',
-            'location'        => 'nullable|array',
-            'location.*'      => 'string|max:255',
-            'details'         => 'nullable|array',
-            'details.*'       => 'string',
+            'title' => 'sometimes|array',
+            'title.*' => 'string|max:255',
+            'type' => 'sometimes|in:onsite,remote',
+            'is_easy_apply' => 'boolean',
+            'apply_link' => 'nullable|url|required_unless:is_easy_apply,true',
+            'location' => 'nullable|array',
+            'location.*' => 'string|max:255',
+            'details' => 'nullable|array',
+            'details.*' => 'string',
             'job_description' => 'sometimes|array',
-            'job_description.*'=> 'string',
-            'requirements'    => 'sometimes|array',
-            'requirements.*'  => 'string',
-            'benefits'        => 'nullable|array',
-            'benefits.*'      => 'string',
-            'overview'        => 'nullable|array',
-            'overview.*'      => 'string',
-            'image'           => 'nullable|image|mimes:jpeg,png,jpg,webp|max:2048',
+            'job_description.*' => 'string',
+            'requirements' => 'sometimes|array',
+            'requirements.*' => 'string',
+            'benefits' => 'nullable|array',
+            'benefits.*' => 'string',
+            'overview' => 'nullable|array',
+            'overview.*' => 'string',
+            'image' => 'nullable|image|mimes:jpeg,png,jpg,webp|max:2048',
         ]);
 
         if ($request->hasFile('image')) {
@@ -125,7 +129,7 @@ class JobController extends Controller
 
         return response()->json([
             'message' => 'Job updated successfully.',
-            'job'     => $job->fresh(),
+            'job' => $job->fresh(),
         ]);
     }
 
@@ -181,7 +185,7 @@ class JobController extends Controller
 
         return response()->json([
             'message' => 'Job approved successfully.',
-            'job'     => $job,
+            'job' => $job,
         ]);
     }
 
@@ -196,7 +200,18 @@ class JobController extends Controller
 
         return response()->json([
             'message' => 'Job rejected.',
-            'job'     => $job,
+            'job' => $job,
+        ]);
+    }
+    public function pending($id)
+    {
+        $job = JobListing::findOrFail($id);
+
+        $job->update(['status' => JobListing::STATUS_PENDING]);
+
+        return response()->json([
+            'message' => 'Job marked as pending.',
+            'job' => $job,
         ]);
     }
 
@@ -214,5 +229,24 @@ class JobController extends Controller
         $job->forceDelete();
 
         return response()->json(['message' => 'Job permanently deleted.']);
+    }
+    public function trashed()
+    {
+        // onlyTrashed() specifically gets items where deleted_at IS NOT NULL
+        $jobs = JobListing::onlyTrashed()
+            ->with('employer:id,name,email')
+            ->latest('deleted_at')
+            ->paginate(15);
+
+        return response()->json($jobs);
+    }
+
+    // 2. Restore a job
+    public function restore($id)
+    {
+        $job = JobListing::onlyTrashed()->findOrFail($id);
+        $job->restore();
+
+        return response()->json(['message' => 'Job restored successfully.']);
     }
 }

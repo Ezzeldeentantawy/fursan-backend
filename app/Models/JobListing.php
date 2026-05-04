@@ -25,6 +25,8 @@ class JobListing extends Model
     protected $fillable = [
         'employer_id',
         'type',
+        'is_easy_apply',
+        'apply_link',
         'location',
         'title',
         'details',
