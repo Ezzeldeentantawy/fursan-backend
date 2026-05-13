@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Setting;
+use App\Models\Site;
 use Illuminate\Http\Request;
 
 class SettingsController extends Controller
@@ -144,29 +145,50 @@ class SettingsController extends Controller
         return response()->json(['status' => 'success']);
     }
 
-    public function getSchema()
+    public function getSchema(Request $request)
     {
-        // 1. Get all settings in one query to save database resources
+        // Get site from query parameter or use default site
+        $siteId = $request->query('site');
+        
+        if ($siteId) {
+            $site = Site::where('domain', $siteId)->orWhere('id', $siteId)->first();
+        } else {
+            $site = Site::where('is_default', true)->first();
+        }
+        
+        if (!$site) {
+            $site = Site::first(); // Fallback
+        }
+        
+        // Try to get schema from site_schemas table first
+        $orgSchema = $site->schemas()->where('type', 'Organization')->first();
+        $websiteSchema = $site->schemas()->where('type', 'WebSite')->first();
+        
+        if ($orgSchema && $websiteSchema) {
+            // Use site-specific schemas
+            return [
+                '@context' => 'https://schema.org',
+                '@graph' => [
+                    $orgSchema->data,
+                    $websiteSchema->data,
+                ],
+            ];
+        }
+        
+        // Fallback to settings table (legacy)
         $settings = Setting::whereIn('key', [
-            'site_name',
-            'site_url',
-            'logo',
-            'facebook',
-            'instagram',
-            'linkedin',
+            'site_name', 'site_url', 'logo', 'facebook', 'instagram', 'linkedin',
         ])->pluck('value', 'key');
-
+        
         $siteUrl = rtrim($settings->get('site_url'), '/');
         $siteName = $settings->get('site_name');
-
-        // 2. Build social links
+        
         $sameAs = array_values(array_filter([
             $settings->get('facebook'),
             $settings->get('instagram'),
             $settings->get('linkedin'),
         ]));
-
-        // 3. Build the Schema array
+        
         $schema = [
             '@context' => 'https://schema.org',
             '@graph' => [
@@ -182,22 +204,19 @@ class SettingsController extends Controller
                     '@id' => $siteUrl.'/#website',
                     'url' => $siteUrl,
                     'name' => $siteName,
-                    'publisher' => [
-                        '@id' => $siteUrl.'/#organization',
-                    ]
+                    'publisher' => ['@id' => $siteUrl.'/#organization'],
                 ],
             ],
         ];
-
-        // 4. Only add logo if it exists (prevents "logo": null)
+        
+        // Only add logo if it exists (prevents "logo": null)
         if ($settings->get('logo')) {
             $schema['@graph'][0]['logo'] = [
                 '@type' => 'ImageObject',
                 'url' => asset('storage/'.$settings->get('logo')),
             ];
         }
-
-        // Return the array to be used in a Blade view
+        
         return $schema;
     }
 }

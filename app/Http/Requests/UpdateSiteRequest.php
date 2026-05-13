@@ -32,6 +32,8 @@ class UpdateSiteRequest extends FormRequest
                 "unique:sites,domain,{$siteId}",
             ],
             'is_active' => 'sometimes|boolean',
+            'favicon_media_id' => 'sometimes|nullable|integer|exists:media,id',
+            'global_css' => 'sometimes|nullable|string',
         ];
     }
 
@@ -43,8 +45,10 @@ class UpdateSiteRequest extends FormRequest
         $validator->after(function (Validator $validator) {
             $user = auth()->user();
 
-            // Only allow site updates if user is admin
-            if (!$user->is_admin && $this->hasAny(['name', 'domain', 'is_active'])) {
+            // Only allow site settings updates (name, domain, is_active) if user is admin
+            // favicon_media_id can be updated by non-admins (e.g., through site settings modal)
+            $adminOnlyFields = ['name', 'domain', 'is_active'];
+            if (!$user->is_admin && $this->hasAny($adminOnlyFields)) {
                 $validator->errors()->add(
                     'permission',
                     'Only administrators can update site settings.'

@@ -7,15 +7,28 @@ use App\Http\Controllers\JobController;
 use App\Http\Controllers\PageController;
 use App\Http\Controllers\SettingsController;
 use App\Http\Controllers\SiteController;
+use App\Http\Controllers\SiteSchemaController;
+use App\Http\Controllers\SiteMenuController;
+use App\Http\Controllers\SiteGlobalCssController;
+use App\Http\Controllers\SiteSocialMediaController;
 use App\Http\Controllers\TemplatesController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\Api\MediaController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
-Route::prefix('v1')->group(function () {
+    Route::prefix('v1')->group(function () {
     Route::get('render/home', [PageController::class, 'getHomePage']);
     Route::get('render/{slug}', [PageController::class, 'getBySlug']);
+
+    // Default site endpoint (public - used by frontend to resolve default site)
+    Route::get('sites/default', function() {
+        $site = \App\Models\Site::default()->where('is_active', true)->with('favicon')->firstOrFail();
+        return new \App\Http\Resources\SiteResource($site);
+    });
+
+    // Check if domain is a valid site (public - used by frontend to disambiguate URLs)
+    Route::get('sites/check-domain/{domain}', [SiteController::class, 'checkDomain']);
 
     Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
         return $request->user();
@@ -32,6 +45,12 @@ Route::prefix('v1')->group(function () {
     Route::get('/global-elements', [TemplatesController::class, 'getGlobals']);
     Route::get('/active-header', [TemplatesController::class, 'getHeader']);
     Route::get('/active-footer', [TemplatesController::class, 'getFooter']);
+
+    // Public: site menus (used by frontend PageRenderer)
+    Route::get('/sites/{site}/menus', [SiteMenuController::class, 'show']);
+
+    // Public: global CSS for a site (used by frontend PageRenderer)
+    Route::get('/sites/{site}/global-css', [SiteGlobalCssController::class, 'show']);
 
     Route::middleware('throttle:5,1')->group(function () {
         Route::post('/newsletter/subscribe', [ContactController::class, 'newsLetterSubscribe']);
@@ -77,9 +96,9 @@ Route::prefix('v1')->group(function () {
     });
 
     // ─────────────────────────────────────────────────
-    // Admin Routes
+    // Admin Routes (super_admin and site_admin)
     // ─────────────────────────────────────────────────
-    Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
+    Route::middleware(['auth:sanctum', 'role:super_admin,site_admin'])->group(function () {
 
         // Employer management
         Route::post('/create/employer', [AuthController::class, 'createEmployer']);
@@ -115,7 +134,11 @@ Route::prefix('v1')->group(function () {
         Route::post('/templates', [TemplatesController::class, 'store']);
         Route::get('/templates/{template}', [TemplatesController::class, 'show']);
         Route::put('/templates/{template}', [TemplatesController::class, 'update']);
+        Route::put('/templates/{template}/content', [TemplatesController::class, 'updateContent']);
         Route::delete('/templates/{template}', [TemplatesController::class, 'destroy']);
+
+        // Get templates by site (for TemplatePicker)
+        Route::get('/templates-by-site/{siteId}', [TemplatesController::class, 'bySite']);
 
         // Settings
         Route::get('/settings/site', [SettingsController::class, 'getSiteSettings']);
@@ -126,10 +149,19 @@ Route::prefix('v1')->group(function () {
         Route::get('/settings/social-links', [SettingsController::class, 'getSocialLinks']);
         Route::delete('/settings/social-links', [SettingsController::class, 'deleteSocialLinks']);
 
-        // User management
+        // User management (super_admin only)
         Route::get('/users', [UserController::class, 'index']);
+        Route::post('/users', [UserController::class, 'store']);
+        Route::get('/users/{user}', [UserController::class, 'show']);
+        Route::put('/users/{user}', [UserController::class, 'update']);
+        Route::put('/users/{user}/password', [UserController::class, 'changePassword']);
         Route::delete('/users/{user}', [UserController::class, 'destroy']);
-        Route::patch('/users/{id}/password', [UserController::class, 'changePassword']);
+
+        // Dashboard stats (super_admin)
+        Route::get('/stats', [App\Http\Controllers\Api\StatsController::class, 'index'])->middleware('auth:sanctum');
+        
+        // Site-specific stats (site_admin)
+        Route::get('/site-stats', [App\Http\Controllers\Api\StatsController::class, 'siteStats'])->middleware('auth:sanctum');
 
         // Site management (rate limited: 60 requests per minute for admin usage)
         // Note: throttle middleware applies to all routes in this group
@@ -137,6 +169,23 @@ Route::prefix('v1')->group(function () {
             Route::apiResource('sites', SiteController::class)->except(['create', 'show']);
             // Custom route for edit (GET /sites/{id}) since we excluded 'show'
             Route::get('/sites/{id}', [SiteController::class, 'edit']);
+            Route::patch('/sites/{site}/toggle-default', [SiteController::class, 'toggleDefault']);
+            
+            // Site schemas
+            Route::get('/sites/{site}/schemas', [SiteSchemaController::class, 'index']);
+            Route::get('/sites/{site}/schemas/{type}', [SiteSchemaController::class, 'show']);
+            Route::put('/sites/{site}/schemas/{type}', [SiteSchemaController::class, 'update']);
+            Route::delete('/sites/{site}/schemas/{type}', [SiteSchemaController::class, 'destroy']);
+
+            // Site Menus (PUT only — GET is public, registered above)
+            Route::put('/sites/{site}/menus', [SiteMenuController::class, 'update']);
+
+            // Site Social Media
+            Route::get('/sites/{site}/social-media', [SiteSocialMediaController::class, 'show']);
+            Route::put('/sites/{site}/social-media', [SiteSocialMediaController::class, 'update']);
+
+            // Site Global CSS
+            Route::put('/sites/{site}/global-css', [SiteGlobalCssController::class, 'update']);
         });
     });
 });

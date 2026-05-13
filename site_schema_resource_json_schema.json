@@ -1,0 +1,34 @@
+{
+  "siteSchemaResource": {
+    "id": "integer",
+    "site_id": "integer",
+    "type": "string",
+    "data": "array|object",
+    "created_at": "datetime|null",
+    "updated_at": "datetime|null"
+  },
+  "siteResource": {
+    "id": "integer",
+    "name": "string",
+    "domain": "string",
+    "is_default": "boolean",
+    "is_active": "boolean",
+    "pages_count": "integer|null (only when pages relationship is loaded)",
+    "created_at": "datetime",
+    "updated_at": "datetime"
+  },
+  "notes": {
+    "siteSchemaEndpoints": {
+      "index": "GET /api/v1/sites/{site}/schemas - Returns collection of SiteSchemaResource",
+      "show": "GET /api/v1/sites/{site}/schemas/{type} - Returns single SiteSchemaResource",
+      "update": "PUT /api/v1/sites/{site}/schemas/{type} - Expects { data: array }, returns SiteSchemaResource",
+      "destroy": "DELETE /api/v1/sites/{site}/schemas/{type} - Returns 204 No Content"
+    },
+    "toggleDefaultEndpoint": {
+      "toggleDefault": "PATCH /api/v1/sites/{site}/toggle-default - Returns { message: string, data: SiteResource }"
+    },
+    "schemaEndpoint": {
+      "getSchema": "GET /api/v1/seo/schema?site={siteId|domain} - Now supports per-site schemas from site_schemas table with fallback to settings table"
+    }
+  }
+}

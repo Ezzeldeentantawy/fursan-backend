@@ -41,9 +41,9 @@ class PageController extends Controller
             return $user->site_id;
         }
 
-        // Default to site_id=1 for backward compatibility (admin only)
+        // Default to the configured default site for backward compatibility (admin only)
         if ($user->isAdmin()) {
-            return 1;
+            return Site::getDefaultSiteId();
         }
 
         abort(403, 'No site assigned to your account. Please contact administrator.');
@@ -78,13 +78,19 @@ class PageController extends Controller
             abort(404, 'Site not found.');
         }
         
-        // For public endpoints without site param, we need a default
-        // Try to get default site (site_id=1 or first active site)
-        $defaultSite = Site::where('is_active', true)->first();
+        // For public endpoints without site param, use the configured default site
+        $defaultSiteId = Site::getDefaultSiteId();
+        $defaultSite = Site::where('id', $defaultSiteId)->where('is_active', true)->first();
         if ($defaultSite) {
             return $defaultSite->id;
         }
-        
+
+        // Fallback to any active site
+        $fallbackSite = Site::where('is_active', true)->first();
+        if ($fallbackSite) {
+            return $fallbackSite->id;
+        }
+
         abort(404, 'No active site found.');
     }
 
@@ -194,8 +200,8 @@ class PageController extends Controller
             ]);
             
             // Admin viewing all sites - no site filter applied
-            $query = Page::query()
-                ->select('id', 'title', 'title_ar', 'slug', 'is_published', 'is_translated', 'updated_at', 'is_home', 'site_id')
+            $query = Page::with('site')
+                ->select('id', 'title', 'title_ar', 'slug', 'is_published', 'is_translated', 'created_at', 'updated_at', 'is_home', 'site_id')
                 ->latest();
         } else {
             // Normal flow: get specific site ID and authorize
@@ -203,13 +209,26 @@ class PageController extends Controller
             $this->validateSite($siteId);
             $this->authorizeSiteAccess($siteId);
 
-            $query = Page::forSite($siteId)
-                ->select('id', 'title', 'title_ar', 'slug', 'is_published', 'is_translated', 'updated_at', 'is_home', 'site_id')
+            $query = Page::with('site')
+                ->forSite($siteId)
+                ->select('id', 'title', 'title_ar', 'slug', 'is_published', 'is_translated', 'created_at', 'updated_at', 'is_home', 'site_id')
                 ->latest();
         }
 
         if ($lang === 'ar') {
             $query->where('is_translated', true);
+        }
+
+        // Optional search filter — search by title or meta data
+        if ($search = $request->query('search')) {
+            $query->where(function ($q) use ($search) {
+                $q->where('title', 'like', "%{$search}%")
+                  ->orWhere('title_ar', 'like', "%{$search}%")
+                  ->orWhere('meta_title', 'like', "%{$search}%")
+                  ->orWhere('meta_title_ar', 'like', "%{$search}%")
+                  ->orWhere('meta_description', 'like', "%{$search}%")
+                  ->orWhere('meta_description_ar', 'like', "%{$search}%");
+            });
         }
 
         return response()->json([
@@ -236,6 +255,7 @@ class PageController extends Controller
         $page = Page::forSite($siteId)
             ->where('slug', $slug)
             ->where('is_published', true)
+            ->with('site.favicon')
             ->first();
 
         if (!$page) {
@@ -281,6 +301,7 @@ class PageController extends Controller
         $page = Page::forSite($siteId)
             ->where('is_home', true)
             ->where('is_published', true)
+            ->with('site.favicon')
             ->first();
 
         if (!$page) {
@@ -353,6 +374,9 @@ class PageController extends Controller
         }
 
         $this->authorizePageModification($page);
+
+        // Eager load the site relationship so PageResource includes site data (site.id is needed by the builder to fetch menus, templates, etc.)
+        $page->load('site');
 
         return response()->json([
             'data' => (new PageResource($page))->toArray($request),

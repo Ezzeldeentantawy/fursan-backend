@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Resources\UserResource;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -21,21 +22,21 @@ class AuthController extends Controller
             'name' => $request->name,
             'email' => $request->email,
             'password' => $request->password, // hashed automatically if using $casts['password'] = 'hashed'
-            'role' => 'candidate', // important: set role
+            'role' => 'site_admin', // Updated: use new role value
         ]);
 
         Auth::login($user);
 
         return response()->json([
             'message' => 'Candidate registered successfully',
-            'user' => $user
+            'user' => new UserResource($user),
         ], 201);
     }
     public function createEmployer(Request $request)
     {
-        // Make sure the authenticated user exists
+        // Make sure the authenticated user is super_admin
         $admin = $request->user();
-        if (!$admin || $admin->role !== 'admin') {
+        if (!$admin || !$admin->isSuperAdmin()) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
@@ -49,12 +50,12 @@ class AuthController extends Controller
             'name' => $request->name,
             'email' => $request->email,
             'password' => $request->password, // hashed automatically if User model has cast 'password' => 'hashed'
-            'role' => 'employer', // force role
+            'role' => 'site_admin', // Updated: use new role value
         ]);
 
         return response()->json([
-            'message' => 'Employer created successfully',
-            'user' => $user,
+            'message' => 'Site Admin created successfully',
+            'user' => new UserResource($user),
         ], 201);
     }
     public function login(Request $request)
@@ -73,7 +74,8 @@ class AuthController extends Controller
 
         return response()->json([
             'message' => 'Login successful',
-            'user' => $user,
+            'user' => new UserResource($user),
+            'redirect' => $user->isSuperAdmin() ? '/admin' : '/admin/site',
         ]);
     }
     public function logout(Request $request)

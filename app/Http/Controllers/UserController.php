@@ -2,108 +2,131 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\ChangePasswordRequest;
+use App\Http\Requests\StoreUserRequest;
+use App\Http\Requests\UpdateUserRequest;
+use App\Http\Resources\UserResource;
 use App\Models\User;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Storage;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Support\Facades\Hash;
 
 class UserController extends Controller
 {
-    // ─────────────────────────────────────────────────
-    // GET /user/profile  — return authenticated user's profile
-    // ─────────────────────────────────────────────────
-    public function profile(Request $request)
+    /**
+     * List all users (super_admin only)
+     */
+    public function index(): AnonymousResourceCollection
     {
-        $user = $request->user();
+        $this->authorizeSuperAdmin();
         
-        return response()->json([
-            'user' => [
-                'id' => $user->id,
-                'name' => $user->name,
-                'email' => $user->email,
-                'role' => $user->role,
-                'site_id' => $user->site_id,
-                'phone' => $user->phone,
-                'avatar' => $user->avatar,
-                'cv' => $user->cv,
-                'isAdmin' => $user->isAdmin(),
-            ],
-        ]);
+        $users = User::with('site')->get();
+        return UserResource::collection($users);
     }
 
-    // ─────────────────────────────────────────────────
-    // POST /user/profile  — update name, phone, avatar, cv
-    // ─────────────────────────────────────────────────
-    public function updateProfile(Request $request)
+    /**
+     * Store a new user (super_admin only)
+     */
+    public function store(StoreUserRequest $request): JsonResponse
     {
-        $user = $request->user();
-
-        $validated = $request->validate([
-            'name' => 'sometimes|string|max:255',
-            'phone' => 'sometimes|nullable|string|max:30',
-            'email' => 'sometimes|string|email|max:255|unique:users,email,' . $user->id,
-            'avatar' => 'sometimes|nullable|image|mimes:jpeg,png,jpg,webp|max:2048',
-            'cv' => 'sometimes|nullable|file|mimes:pdf,doc,docx|max:5120', // max 5 MB
-        ]);
-
-        // Handle avatar upload
-        if ($request->hasFile('avatar')) {
-            // Delete old avatar if it exists
-            if ($user->avatar) {
-                Storage::disk('public')->delete($user->avatar);
-            }
-            $validated['avatar'] = $request->file('avatar')->store('avatars', 'public');
-        }
-
-        // Handle CV upload
-        if ($request->hasFile('cv')) {
-            // Delete old CV if it exists
-            if ($user->cv) {
-                Storage::disk('public')->delete($user->cv);
-            }
-            $validated['cv'] = $request->file('cv')->store('cvs', 'public');
-        }
-
-        $user->update($validated);
-
-        return response()->json([
-            'message' => 'Profile updated successfully.',
-            'user' => $user->fresh(),
-        ]);
+        $this->authorizeSuperAdmin();
+        
+        $data = $request->validated();
+        $data['password'] = Hash::make($data['password']);
+        
+        $user = User::create($data);
+        $user->load('site');
+        
+        return (new UserResource($user))
+            ->response()
+            ->setStatusCode(201);
     }
 
-    public function index()
+    /**
+     * Show a specific user
+     */
+    public function show($id): UserResource
     {
-        $users = User::select('id', 'name', 'email', 'role', 'phone', 'avatar', 'created_at')->get();
-
-        return response()->json(['data' => $users]);
+        $user = User::with('site')->findOrFail($id);
+        
+        // Site admins can only view themselves
+        if (!auth()->user()->isSuperAdmin() && auth()->id() !== $user->id) {
+            abort(403, 'Unauthorized');
+        }
+        
+        return new UserResource($user);
     }
 
-    public function destroy(User $user)
+    /**
+     * Update a user
+     */
+    public function update(UpdateUserRequest $request, $id): UserResource
     {
-        if ($user->avatar) {
-            Storage::disk('public')->delete($user->avatar);
+        $user = User::findOrFail($id);
+        
+        // Only super_admin can update other users
+        // Site admins can only update themselves
+        if (!auth()->user()->isSuperAdmin() && auth()->id() !== $user->id) {
+            abort(403, 'Unauthorized');
         }
-        if ($user->cv) {
-            Storage::disk('public')->delete($user->cv);
+        
+        $data = $request->validated();
+        
+        if (isset($data['password'])) {
+            $data['password'] = Hash::make($data['password']);
         }
+        
+        $user->update($data);
+        $user->load('site');
+        
+        return new UserResource($user);
+    }
 
+    /**
+     * Change user password (super_admin only, or user changing their own)
+     */
+    public function changePassword(ChangePasswordRequest $request, $id): JsonResponse
+    {
+        $user = User::findOrFail($id);
+        
+        // Only super_admin can change other users' passwords
+        if (!auth()->user()->isSuperAdmin() && auth()->id() !== $user->id) {
+            abort(403, 'Unauthorized');
+        }
+        
+        $user->update([
+            'password' => Hash::make($request->input('password')),
+        ]);
+        
+        return response()->json(['message' => 'Password updated successfully']);
+    }
+
+    /**
+     * Delete a user (super_admin only)
+     */
+    public function destroy($id): JsonResponse
+    {
+        $this->authorizeSuperAdmin();
+        
+        $user = User::findOrFail($id);
+        
+        // Prevent deleting yourself
+        if (auth()->id() === $user->id) {
+            return response()->json(['message' => 'Cannot delete your own account'], 422);
+        }
+        
         $user->delete();
-
+        
         return response()->json(['message' => 'User deleted successfully']);
     }
 
-    public function changePassword(Request $request, $id)
+    /**
+     * Check if current user is super admin
+     */
+    protected function authorizeSuperAdmin(): void
     {
-        $user = User::findOrFail($id);
-
-        $validated = $request->validate([
-            'password' => 'required|string|min:8',
-        ]);
-
-        $user->update([
-            'password' => $validated['password'],
-        ]);
-
-        return response()->json(['message' => 'Password changed successfully']);
+        if (!auth()->user()->isSuperAdmin()) {
+            abort(403, 'Only super admins can perform this action');
+        }
     }
 }

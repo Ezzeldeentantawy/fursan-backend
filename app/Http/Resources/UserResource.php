@@ -5,18 +5,17 @@ namespace App\Http\Resources;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
-class TemplateResource extends JsonResource
+class UserResource extends JsonResource
 {
     public function toArray(Request $request): array
     {
         return [
             'id' => $this->id,
-            'title' => $this->title,
-            'content' => $this->content,
-            'type' => $this->type,
+            'name' => $this->name,
+            'email' => $this->email,
+            'role' => $this->role,
             'site_id' => $this->site_id,
-            'site_name' => $this->relationLoaded('site') && $this->site ? $this->site->name : null,
-            'is_published' => $this->is_published ?? false,
+            'site' => new SiteResource($this->whenLoaded('site')),
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
         ];

@@ -14,6 +14,7 @@ class PageResource extends JsonResource
 
         $data = [
             'id' => $this->id,
+            'site_id' => $this->site_id,
             'slug' => $this->slug,
             'title' => $lang === 'ar' ? $this->title_ar : $this->title,
             'title_ar' => $this->title_ar,
@@ -27,7 +28,9 @@ class PageResource extends JsonResource
             'meta_description' => $lang === 'ar' ? $this->meta_description_ar : $this->meta_description,
             'meta_description_ar' => $this->meta_description_ar,
             'meta_description_en' => $this->meta_description,
-            'keywords' => $this->keywords,
+            'keywords' => $this->getKeywords($lang),
+            'keywords_en' => $this->getKeywords('en'),
+            'keywords_ar' => $this->getKeywords('ar'),
             'is_published' => $this->is_published,
             'is_translated' => $this->is_translated,
             'is_home' => $this->is_home,
@@ -35,13 +38,40 @@ class PageResource extends JsonResource
             'updated_at' => $this->updated_at,
         ];
 
-        // Only include site_id and site_name for admin users or when specifically needed
-        // This prevents leaking site information to unauthorized users
-        if ($user && ($user->isAdmin() || $user->canAccessSite($this->site_id))) {
-            $data['site_id'] = $this->site_id;
-            $data['site_name'] = $this->whenLoaded('site', fn() => $this->site->name);
+        // Include site data with favicon for all users (public pages need site info for favicon, etc.)
+        // Use SiteResource to ensure consistent structure and favicon_url inclusion.
+        // Call toArray() directly to avoid double { data: ... } wrapping when embedded in PageResource.
+        // Check if site relationship is loaded before creating resource
+        if ($this->relationLoaded('site') && $this->site) {
+            $data['site'] = (new SiteResource($this->site))->toArray($request);
+        } else {
+            $data['site'] = null;
         }
 
         return $data;
+    }
+
+    /**
+     * Get keywords for a specific language with backward compatibility.
+     */
+    private function getKeywords(string $lang): array
+    {
+        $keywords = $this->keywords;
+
+        if (!is_array($keywords)) {
+            return [];
+        }
+
+        // New format: ['en' => [...], 'ar' => [...]]
+        if (isset($keywords['en']) || isset($keywords['ar'])) {
+            return $keywords[$lang] ?? [];
+        }
+
+        // Old flat array format: treat as English
+        if ($lang === 'en') {
+            return $keywords;
+        }
+
+        return [];
     }
 }

@@ -20,9 +20,8 @@ class User extends Authenticatable
     /** @use HasFactory<UserFactory> */
     use HasApiTokens, HasFactory, Notifiable;
 
-    public const ROLE_ADMIN = 'admin';
-    public const ROLE_EMPLOYER = 'employer';
-    public const ROLE_CANDIDATE = 'candidate';
+    public const ROLE_SUPER_ADMIN = 'super_admin';
+    public const ROLE_SITE_ADMIN = 'site_admin';
 
     /**
      * Get the attributes that should be cast.
@@ -71,7 +70,23 @@ class User extends Authenticatable
      */
     public function isAdmin(): bool
     {
-        return $this->role === self::ROLE_ADMIN;
+        return $this->role === self::ROLE_SUPER_ADMIN;
+    }
+
+    /**
+     * Check if user is super admin.
+     */
+    public function isSuperAdmin(): bool
+    {
+        return $this->role === 'super_admin';
+    }
+
+    /**
+     * Check if user is site admin.
+     */
+    public function isSiteAdmin(): bool
+    {
+        return $this->role === 'site_admin';
     }
 
     /**
