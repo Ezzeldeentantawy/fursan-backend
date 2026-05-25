@@ -26,9 +26,11 @@ class AuthController extends Controller
         ]);
 
         Auth::login($user);
+        $token = $user->createToken('auth-token');
 
         return response()->json([
             'message' => 'Candidate registered successfully',
+            'token' => $token->plainTextToken,
             'user' => new UserResource($user),
         ], 201);
     }
@@ -71,15 +73,22 @@ class AuthController extends Controller
 
         // User is now logged in via session
         $user = Auth::user();
+        $token = $user->createToken('auth-token');
 
         return response()->json([
             'message' => 'Login successful',
+            'token' => $token->plainTextToken,
             'user' => new UserResource($user),
             'redirect' => $user->isSuperAdmin() ? '/admin' : '/admin/site',
         ]);
     }
     public function logout(Request $request)
     {
+        // Revoke the current Sanctum token if using token-based auth
+        if ($request->user() && method_exists($request->user(), 'currentAccessToken')) {
+            $request->user()->currentAccessToken()->delete();
+        }
+
         Auth::guard('web')->logout();
 
         if ($request->hasSession()) {

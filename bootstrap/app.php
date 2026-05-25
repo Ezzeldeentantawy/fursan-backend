@@ -13,6 +13,7 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->statefulApi();
+        $middleware->prepend(\Illuminate\Http\Middleware\HandleCors::class);
         $middleware->alias([
             'role' => \App\Http\Middleware\RoleMiddleware::class,
         ]);
